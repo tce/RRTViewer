@@ -15,7 +15,7 @@ import org.apache.commons.collections.buffer.CircularFifoBuffer;
 import processing.core.PApplet;
 import processing.core.PConstants;
 import us.ihmc.planning.configurationSpace.Topology;
-import us.ihmc.planning.plan.rrt.RRT2;
+import us.ihmc.planning.plan.rrt.RRT;
 import us.ihmc.planning.plan.rrt.RRTListener;
 import us.ihmc.planning.plan.rrt.RRTStateInterface;
 import us.ihmc.planning.world.Obstacle;
@@ -40,7 +40,7 @@ public class RRTViewer extends RouteViewer3D implements RRTListener<ExtState>
     private static int numExpanded = 0;
     private Hashtable<ExtState, RoutePoint> stateToPoint = new Hashtable<ExtState, RoutePoint>();
 
-    RRT2 rrt = null;
+    RRT rrt = null;
 
 
     public void setupBox()
