@@ -89,7 +89,7 @@ public class RRTViewer extends RouteViewer3D implements RRTListener<ExtState>
 //            listeners.add( rrtSearch );
             listeners.add( this );
 
-            rrtSearch.initRRT(listeners);
+            rrtSearch.initRRT(listeners, 5, 40.0);
             rrt = rrtSearch.rrt;
             rrtSearch.closestPointFunction = new WaypointExtStateClosestPointFunction(rrt, bc.getPath(), (PathConstraints)rrtSearch.constraints);
             rrt.setClosestPointFunction(rrtSearch.closestPointFunction);
@@ -156,7 +156,6 @@ public class RRTViewer extends RouteViewer3D implements RRTListener<ExtState>
         drawObstacles();
         drawRoutePoints();
         drawBoundingBox();
-        drawTest();
         drawInfoLabel();
     }
 
@@ -402,7 +401,7 @@ public class RRTViewer extends RouteViewer3D implements RRTListener<ExtState>
 //                        listeners.add( rrtSearch );
                         listeners.add( thisViewer );
 
-                        rrtSearch.initRRT(listeners);
+                        rrtSearch.initRRT(listeners, 5, 40.0);
                         rrt = rrtSearch.rrt;
                         rrtSearch.closestPointFunction = new ExtStateClosestPointFunction(rrt, approach.getBounds().getMinPoint(), approach.getBounds().getMaxPoint(), approach);
                         rrt.setClosestPointFunction(rrtSearch.closestPointFunction);
