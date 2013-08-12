@@ -7,6 +7,9 @@
  */
 package us.ihmc.viewers;
 
+
+import gov.nasa.arc.sirca.maneuverabilityFunction.ApproachConstraints;
+import gov.nasa.arc.sirca.maneuverabilityFunction.Constraints;
 import gov.nasa.arc.sirca.path.ExtState;
 import peasy.CameraState;
 import peasy.PeasyCam;
@@ -19,8 +22,12 @@ import processing.core.PApplet;
 import processing.core.PConstants;
 import processing.core.PFont;
 import us.ihmc.planning.world.Obstacle;
+import us.ihmc.utilities.math.geometry.BoundingBox3d;
+import us.ihmc.utilities.math.geometry.ConvexPolygon2d;
 
 import javax.swing.*;
+import javax.vecmath.Point2d;
+import javax.vecmath.Point3d;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.Timer;
@@ -47,12 +54,9 @@ public class RouteViewer3D extends PApplet
     Timer                                _moveTimer               = null;
     Timer                                _changeTimer             = null;
 
-    ArrayList<RoutePoint> _points;
-    ArrayList<Obstacle>   _obstacles;
+    ArrayList<RoutePoint> _points = new ArrayList<RoutePoint>();
+    ArrayList<Obstacle>   _obstacles = new ArrayList<Obstacle>();
 
-    int                                  maxSpineLength           = 300;
-
-    int                                  _selectedProjection      = -1;
 
     int negxColor          = color(180, 180, 40, 160);
     int posxColor          = color(180, 115, 35, 160);
@@ -67,15 +71,28 @@ public class RouteViewer3D extends PApplet
 
     PFont pointFont = createFont("Arial Black", 10, true);
 
+    Constraints constraints = null;
+
     public void setup()
     {
+
+        GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        GraphicsDevice[] screenDevices = ge.getScreenDevices();
+
         Dimension d = Toolkit.getDefaultToolkit().getScreenSize();
 
+        if ( screenDevices.length > 1)
+        {
+            Rectangle bounds = screenDevices[1].getDefaultConfiguration().getBounds();
+            d = bounds.getSize();
+        }
+
+
         // General preferences
-        size(d.width, d.height, P3D);
+        size(d.width-250, d.height-250, P3D);
         hint(ENABLE_NATIVE_FONTS);
         frameRate(30);
-        textureMode(NORMALIZED);
+        textureMode(NORMAL);
 
         // User controlled camera
         setupCamera();
@@ -118,9 +135,14 @@ public class RouteViewer3D extends PApplet
     public void draw()
     {
         background(0);
-        drawAxis();
+        drawObstacles();
         drawRoutePoints();
+        drawBoundingBox();
+        drawInfoLabel();
+    }
 
+    public void drawInfoLabel()
+    {
         textMode(PConstants.SCREEN);
         textFont(createFont("Arial Black", 12, true));
         stroke(255, 255, 255, 255);
@@ -129,10 +151,65 @@ public class RouteViewer3D extends PApplet
         float[] camRot = _camera.getRotations();
         //text("x:" + camPos[0] + " y:" + camPos[1] + " z:" + camPos[2], 20f, 20f);
         //text("xr:" + camRot[0] + " yr:" + camRot[1] + " zr:" + camRot[2], 20f, 40f);
-        text((int)frameRate + "fps " + _points.size() + " nodes", 20f, 60f);
+        text((int)frameRate + "fps " + _points.size() + " nodes" , 20f, 60f);
     }
 
 
+    public void drawBoundingBox()
+    {
+        if ( constraints instanceof ApproachConstraints)
+        {
+            ApproachConstraints ac = (ApproachConstraints) constraints;
+            BoundingBox3d bounds = ac.getBounds();
+            Point3d max = bounds.getMaxPoint();
+            Point3d min = bounds.getMinPoint();
+
+            int boxWidth = (int)(max.getX() - min.getX());
+            int boxHeight = (int)(max.getY() - min.getY());
+            int boxDepth = (int)(max.getZ());
+
+
+            pushMatrix();
+            translate((int)max.getX(), (int)max.getY(), (int)max.getZ() );
+            sphere(50);
+            popMatrix();
+
+            pushMatrix();
+            translate((int)min.getX(), (int)min.getY(), (int)min.getZ() );
+            fill(255,255,255);
+            sphere(50);
+            popMatrix();
+
+            pushMatrix();
+            translate((int)boxWidth/2,(int) (boxHeight/2+min.getY()), boxDepth/2);//boxHeight/2,boxDepth/2);
+            stroke(0,0,255);
+            noFill();
+            box(boxWidth, boxHeight, boxDepth);
+            popMatrix();
+        }
+    }
+    public void drawObstacles()
+    {
+        if ( _obstacles == null )
+            return;
+
+        pushMatrix();
+        pushStyle();
+        fill(255,0,0);
+        stroke(255,0,0);
+        for (Obstacle obstacle : _obstacles)
+        {
+            beginShape();
+            ConvexPolygon2d poly = obstacle.getConvexPolygon2d();
+            for (Point2d point : poly.getClockwiseOrderedListOfPoints())
+            {
+                vertex((float)point.x, (float)point.y);
+            }
+            endShape(CLOSE);
+        }
+        popStyle();
+        popMatrix();
+    }
     protected RoutePoint randomPoint(String name, RoutePoint parent)
     {
         float halfLength = _axisLength / 2;
@@ -140,7 +217,8 @@ public class RouteViewer3D extends PApplet
                                       random(- halfLength, halfLength ),
                                       random(- halfLength, halfLength ),
                                       random(0,180),
-                                      random(0,360));
+                                      Math.toRadians(random(0,360)),
+                                      Math.toRadians(random(-25, 25)));
         RoutePoint s1 = new RoutePoint(name, randomExtState, defaultPointRadius, defaultSphereColor, parent);
 
         return s1;
@@ -242,6 +320,7 @@ public class RouteViewer3D extends PApplet
     private void drawAxis()
     {
         pushMatrix();
+        pushStyle();
         // Center and spin grid
         translate(-_axisLength / 2, -_axisLength / 2, -_axisLength / 2);
         noFill();
@@ -269,17 +348,29 @@ public class RouteViewer3D extends PApplet
             strokeWeight(1.0f);
         stroke(color(255, 100, 100, 100));
         line(0, 0, 0, 0, 0, _axisLength);
+        popStyle();
         popMatrix();
     }
 
-    private void drawRoutePoints()
+    protected void drawRoutePoints()
     {
         int pickIdx = startPointPickerId;
-        ArrayList<RoutePoint> pointsToDraw = (ArrayList<RoutePoint>) _points.clone();
-        for (RoutePoint sphere : pointsToDraw)
+        int pointSize = _points.size();
+        for (int i = 0; i < pointSize; i++ )
         {
-            sphere.draw(pickIdx);
-            pickIdx++;
+            try
+            {
+                RoutePoint sphere = _points.get(i);
+                if ( sphere != null )
+                {
+                    sphere.draw(pickIdx);
+                    pickIdx++;
+                }
+            }
+            catch (Throwable t)
+            {
+
+            }
         }
     }
 
@@ -288,201 +379,8 @@ public class RouteViewer3D extends PApplet
         PApplet.main(new String[] { "--bgcolor=#000000", "us.ihmc.viewers.RouteViewer3D" });
     }
 
-    public class RoutePointSAV
-    {
-        RoutePointSAV sPosX, sPosY, sPosZ, sNegX, sNegY, sNegZ;
-        {
-            sPosX = sPosY = sPosZ = sNegX = sNegY = sNegZ = null;
-        }
 
-        String                 _name;
-        float                  _x, _y, _z, _speed, _heading, _radius;
-        int                    _originalColor, _rgbColor;
-        RoutePointSAV             _parent;
-        boolean                _onPath = false;
-
-        public RoutePointSAV(String name, float x, float y, float z, float as, float hdg, float radius, int rgbColor, RoutePointSAV parent)
-        {
-            _name = name;
-            _x = x;
-            _y = y;
-            _z = z;
-            _speed = as;
-            _heading = hdg;
-            _radius = radius;
-            _rgbColor = _originalColor = rgbColor;
-            _parent = parent;
-        }
-
-        public RoutePointSAV(RoutePointSAV origPoint)
-        {
-            _name = origPoint._name;
-            _x = origPoint._x;
-            _y = origPoint._y;
-            _z = origPoint._z;
-            _speed = origPoint._speed;
-            _heading = origPoint._heading;
-            _radius = origPoint._radius;
-            _rgbColor = _originalColor = origPoint._originalColor;
-            _parent = origPoint._parent;
-        }
-
-        public void draw(int pickId)
-        {
-            pushMatrix();
-            translate(_x, _y, _z);
-            noStroke();
-            fill(_rgbColor);
-            sphereDetail(10);
-            _picker.start(pickId);
-            sphere(_radius);
-           /*
-            textMode(PConstants.MODEL);
-
-            textFont(pointFont);
-            stroke(255, 255, 255, 255);
-            fill(155, 255, 255, 155);
-            float[] camPosition = _camera.getPosition();
-            float[] camRotations = _camera.getRotations();
-            rotateX(camRotations[0]);
-            rotateY(camRotations[1]);
-            rotateZ(camRotations[2]);
-            translate(-textWidth(_name)/2,_radius+textAscent()+textDescent(),0);
-            text(_name,0,0,0);
-            */
-            popMatrix();
-
-            // draw the connecting lines
-            if (_onPath )
-            {
-                stroke(0, 0, 255, 200);
-                strokeWeight(3.0f);
-            }
-            else
-            {
-                stroke(255, 255, 255, 90);
-                strokeWeight(1.0f);
-            }
-
-
-            if (_parent != null)
-                line(_x, _y, _z, _parent._x, _parent._y, _parent._z);
-            // TODO: draw heading and speed
-
-            int lineAlpha = 100;
-            if ((key == '7' || (keyPressed && key == '1')) && sPosX != null)
-            {
-                stroke(posxColor, lineAlpha);
-                line(_x + defaultPointRadius, _y, _z, sPosX._x + defaultPointRadius, sPosX._y, sPosX._z);
-            }
-            if ((key == '7' || (keyPressed && key == '2')) && sPosY != null)
-            {
-                stroke(posyColor, lineAlpha);
-                line(_x, _y + defaultPointRadius, _z, sPosY._x, sPosY._y + defaultPointRadius, sPosY._z);
-            }
-            if ((key == '7' || (keyPressed && key == '3')) && sPosZ != null)
-            {
-                stroke(poszColor, lineAlpha);
-                line(_x, _y, _z + defaultPointRadius, sPosZ._x, sPosZ._y, sPosZ._z + defaultPointRadius);
-            }
-            if ((key == '7' || (keyPressed && key == '4')) && sNegX != null)
-            {
-                stroke(negxColor, lineAlpha);
-                line(_x - defaultPointRadius, _y, _z, sNegX._x - defaultPointRadius, sNegX._y, sNegX._z);
-            }
-            if ((key == '7' || (keyPressed && key == '5')) && sNegY != null)
-            {
-                stroke(negyColor, lineAlpha);
-                line(_x, _y - defaultPointRadius, _z, sNegY._x, sNegY._y - defaultPointRadius, sNegY._z);
-            }
-            if ((key == '7' || (keyPressed && key == '6')) && sNegZ != null)
-            {
-                stroke(negzColor, lineAlpha);
-                line(_x, _y, _z - defaultPointRadius, sNegZ._x, sNegZ._y, sNegZ._z - defaultPointRadius);
-            }
-        }
-
-        public void move()
-        {
-            if (dragging && _selectedPoints.contains(this))
-                return;
-
-
-            ArrayList<RoutePointSAV> intersectingSpheres = new ArrayList<RoutePointSAV>();
-
-            // find most similar spheres in each of 6 dimensions
-/*
-            for (RoutePointSAV curSphere : _points)
-            {
-                if (curSphere == this)
-                    continue;
-
-                if (dist(_x, _y, _z, curSphere._x, curSphere._y, curSphere._z) < defaultPointRadius * 2)
-                {
-                    intersectingSpheres.add(curSphere);
-                }
-
-            }
-*/
-
-            int intersectMoveDelta = 2;
-            int neighborMoveDelta = 2;
-            // move away from intersecting sphere
-            if (intersectingSpheres.size() > 0)
-            {
-                for (RoutePointSAV intersectingSphere : intersectingSpheres)
-                {
-                    if (this._x < intersectingSphere._x)
-                    {
-                        this._x -= intersectMoveDelta;
-                    }
-                    else if (this._x > intersectingSphere._x)
-                    {
-                        this._x += intersectMoveDelta;
-                    }
-                    if (this._y < intersectingSphere._y)
-                    {
-                        this._y -= intersectMoveDelta;
-                    }
-                    else if (this._y > intersectingSphere._y)
-                    {
-                        this._y += intersectMoveDelta;
-                    }
-                    if (this._z < intersectingSphere._z)
-                    {
-                        this._z -= intersectMoveDelta;
-                    }
-                    else if (this._z > intersectingSphere._z)
-                    {
-                        this._z += intersectMoveDelta;
-                    }
-                }
-            }
-    }
-
-        public double distanceTo(RoutePointSAV rpt)
-        {
-            double xdif = _x - rpt._x;
-            xdif *= xdif;
-            double ydif = _y - rpt._y;
-            ydif *= ydif;
-            double zdif = _z - rpt._z;
-            zdif *= zdif;
-            double sdif = _speed - rpt._speed;
-            sdif *= sdif;
-            double hdif = _heading - rpt._heading;
-            hdif *= hdif;
-
-            return Math.sqrt(xdif + ydif + zdif + sdif + hdif);
-        }
-
-        public void setParent(RoutePointSAV closestPoint)
-        {
-            _parent = closestPoint;
-        }
-    }
-
-    public class RoutePoint
+     public class RoutePoint
     {
         RoutePoint sPosX, sPosY, sPosZ, sNegX, sNegY, sNegZ;
         {
@@ -519,8 +417,10 @@ public class RouteViewer3D extends PApplet
             _parent = origPoint._parent;
         }
 
+
         public void draw(int pickId)
         {
+            pushStyle();
             pushMatrix();
             translate(_Ext_state.getXf(), _Ext_state.getYf(), _Ext_state.getZf());
             noStroke();
@@ -534,20 +434,22 @@ public class RouteViewer3D extends PApplet
             {
                 sphere(_radius);
 
-                if ( _showText )
+                if ( _showText || _name.startsWith("goal") || _name.startsWith("start"))
                 {
                     textMode(PConstants.MODEL);
 
                     textFont(pointFont);
                     stroke(255, 255, 255, 255);
                     fill(155, 255, 255, 155);
+
                     float[] camPosition = _camera.getPosition();
                     float[] camRotations = _camera.getRotations();
                     rotateX(camRotations[0]);
                     rotateY(camRotations[1]);
                     rotateZ(camRotations[2]);
-                    translate(-textWidth(_name)/2,_radius+textAscent()+textDescent(),0);
-                    text(_name,0,0,0);
+                    String label = _name + " " + _Ext_state.getX() + ","+_Ext_state.getY()+","+_Ext_state.getZ();
+                    translate(-textWidth(label)/2,_radius+textAscent()+textDescent(),0);
+                    text(label,0,0,0);
                 }
             }
             popMatrix();
@@ -608,6 +510,7 @@ public class RouteViewer3D extends PApplet
                 line(_Ext_state.getXf(), _Ext_state.getYf(), _Ext_state.getZf() - defaultPointRadius,
                      sNegX._Ext_state.getXf(), sNegX._Ext_state.getYf(), sNegX._Ext_state.getZf() - defaultPointRadius);
             }
+            popStyle();
         }
 
         public void move()

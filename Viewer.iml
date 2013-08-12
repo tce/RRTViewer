@@ -7,13 +7,14 @@
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" name="processing" level="application" />
     <orderEntry type="module" module-name="Planning" />
     <orderEntry type="library" name="vecmath" level="application" />
     <orderEntry type="module" module-name="SIRCA" />
     <orderEntry type="module" module-name="IHMCUtilities" />
     <orderEntry type="module" module-name="ReinforcementLearning" />
     <orderEntry type="module" module-name="Plotting" />
+    <orderEntry type="library" name="ThirdPartyJars" level="application" />
+    <orderEntry type="library" name="processing" level="application" />
   </component>
 </module>
 
